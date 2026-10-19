@@ -2080,7 +2080,22 @@ Object.assign(XL,{
 
 /* ========== Estado ========== */
 const LEVELS=['A','B','C','D','E'];
-const TCOLS=['ID','UBICACION','ORACLE','DESCRIPCION','CANTIDAD','SUBINVENTARIO','OWNER','SEMAFORO','LOTE','POSICIONES','FECHA_RECIBO','ESTADO','COMENTARIOS'];
+const TCOLS=[
+  'ID',
+  'UBICACION',
+  'ORACLE',
+  'DESCRIPCION',
+  'CANTIDAD',
+  'SUBINVENTARIO',
+  'OWNER',
+  'SEMAFORO',
+  'LOTE',
+  'POSICIONES',
+  'FECHA_RECIBO',
+  'ESTADO',
+  'COMENTARIOS'
+];
+
 const BDCOLS=[...TCOLS,'CARA','ALMACEN'];
 const PCOLS=['ORACLE','DESCRIPCION','UNIDAD','PZ_POR_TARIMA'];
 const MCOLS=['FECHA','TIPO','ID_TARIMA','ORACLE','CANTIDAD','ORIGEN','DESTINO','NOTA'];
@@ -2145,7 +2160,16 @@ function suggest(dbl){
   }
   return null;
 }
-function nextId(){let m=0;for(const t of S.tarimas){const n=+String(t.ID).replace(/\D/g,'');if(n>m)m=n}return 'TAR-'+String(m+1).padStart(6,'0')}
+function nextId(){
+  let m=0;
+
+  for(const t of S.tarimas){
+    const n=Number(String(t.ID||'').replace(/\D/g,''));
+    if(n>m)m=n;
+  }
+
+  return String(m+1);
+}
 function log(tipo,t,cant,o,d,nota){S.movs.push({FECHA:now(),TIPO:tipo,ID_TARIMA:t.ID,ORACLE:t.ORACLE,CANTIDAD:cant,ORIGEN:o||'',DESTINO:d||'',NOTA:nota||''})}
 
 /* ========== Archivo ========== */
@@ -2539,13 +2563,48 @@ function aRecibo(){
     if(!g('rO').value.trim()&&!g('rD').value.trim()){toast('Captura el código Oracle o una descripción.','er');return}
     if(!(q>0)){toast('La cantidad debe ser mayor a 0.','er');return}
     const r=check(g('rU').value,dbl);if(!r.ok){toast(r.msg,'er');return}
-    const t={ID:nextId(),UBICACION:r.loc,ORACLE:g('rO').value.trim(),DESCRIPCION:g('rD').value.trim(),CANTIDAD:q,SUBINVENTARIO:g('rS').value,OWNER:g('rW').value.trim(),SEMAFORO:g('rM').value,LOTE:g('rL').value.trim(),POSICIONES:dbl?2:1,FECHA_RECIBO:now(),ESTADO:'REVISADO',COMENTARIOS:g('rC').value.trim()};
-    S.tarimas.push(t);log('RECIBO',t,q,'',r.loc);selCell=parse(r.loc);rackSel=selCell.rack;toast(`Tarima del lote ${t.LOTE||'sin lote'} recibida en ${r.loc}.`,'ok');changed();
-  };
+    const t={
+    ID:nextId(),
+    UBICACION:r.loc,
+    ORACLE:g('rO').value.trim(),
+    DESCRIPCION:g('rD').value.trim(),
+    CANTIDAD:q,
+    SUBINVENTARIO:g('rS').value,
+    OWNER:g('rW').value.trim(),
+    SEMAFORO:g('rM').value,
+    LOTE:g('rL').value.trim(),
+    POSICIONES:dbl?2:1,
+    FECHA_RECIBO:now(),
+    ESTADO:'REVISADO',
+    COMENTARIOS:g('rC').value.trim()
+    };
+
+    const ubicacion=parse(r.loc);
+
+    t.ALMACEN='La Joya';
+
+    if(ubicacion){
+    t.CARA=ubicacion.rack%2===1
+        ?'FRENTE'
+        :'ATRAS';
+    }
+
+    S.tarimas.push(t);
+
+    log('RECIBO',t,q,'',r.loc);
+
+    selCell=ubicacion;
+    rackSel=selCell.rack;
+
+    toast(`Tarima del lote ${t.LOTE||'sin lote'} recibida en ${r.loc}.`,'ok');
+
+    changed();
+    };
 }
 
 /* --- Surtido --- */
 let plan=null;
+
 function vSurtido(){
 
   const R=surtRackSel;
@@ -2683,7 +2742,7 @@ function vSurtido(){
       <div class="card" style="margin-top:12px">
         <h3>Tarima seleccionada</h3>
         <span class="mut">
-          Selecciona una tarima ocupada en el mapa o búscala por ubicación.
+          Selecciona una tarima ocupada en el mapa o búscala por LPN.
         </span>
       </div>
     `;
@@ -2695,6 +2754,7 @@ function vSurtido(){
         <h3>Tarima seleccionada</h3>
 
         <p>
+          <b>LPN:</b> ${esc(seleccionada.LOTE||'—')}<br>
           <b>Ubicación:</b> ${esc(seleccionada.UBICACION)}<br>
           <b>Oracle:</b> ${esc(seleccionada.ORACLE||'—')}<br>
           <b>Descripción:</b> ${esc(seleccionada.DESCRIPCION||'—')}<br>
@@ -2730,12 +2790,12 @@ function vSurtido(){
     <div class="card">
       <h2>Surtido por tarima</h2>
 
-      <p>Busca una ubicación o selecciona directamente una tarima en el mapa.</p>
+      <p>Busca una tarima por su LPN o selecciónala directamente en el mapa.</p>
 
       <div class="row">
         <div class="f">
-          <label>Buscar por ubicación</label>
-          <input id="sLoc" placeholder="Ejemplo: R01-03B-02">
+          <label>Buscar por LPN</label>
+          <input id="sLoc" placeholder="Ingresa el LPN de la tarima">
         </div>
 
         <button class="b p" id="sFindLoc">
@@ -2788,23 +2848,32 @@ function aSurtido(){
   plan=null;
 
   // Vaciar tarima conservando su ubicación y fila de Excel
-  function vaciarTarima(t){
+    function vaciarTarima(t){
 
     const conservar=[
-      'ID',
-      'UBICACION',
-      'CARA',
-      'ALMACEN',
-      '_row'
+        'ID',
+        'UBICACION',
+        'CARA',
+        'ALMACEN',
+        '_row'
     ];
 
     for(const campo of Object.keys(t)){
-      if(!conservar.includes(campo)){
+        if(!conservar.includes(campo)){
         t[campo]='';
-      }
+        }
     }
-  }
 
+  const ubicacion=parse(t.UBICACION);
+
+  t.ALMACEN='La Joya';
+
+  if(ubicacion){
+    t.CARA=ubicacion.rack%2===1
+      ?'FRENTE'
+      :'ATRAS';
+  }
+}
   // ------------------------------------
   // MAPA Y SELECCIÓN DE TARIMAS
   // ------------------------------------
@@ -2848,28 +2917,29 @@ function aSurtido(){
     };
   }
 
+  
   // ------------------------------------
-  // BUSCAR TARIMA POR UBICACIÓN
+  // BUSCAR TARIMA POR LPN
   // ------------------------------------
 
   if(g('sFindLoc')){
 
     g('sFindLoc').onclick=()=>{
 
-      const loc=g('sLoc').value.trim().toUpperCase();
+      const lpn=g('sLoc').value.trim().toUpperCase();
 
-      if(!loc){
-        toast('Captura una ubicación.','er');
+      if(!lpn){
+        toast('Captura el LPN de la tarima.','er');
         return;
       }
 
       const t=S.tarimas.find(x=>
-        String(x.UBICACION||'').trim().toUpperCase()===loc &&
+        String(x.LOTE||'').trim().toUpperCase()===lpn &&
         Number(x.CANTIDAD)>0
       );
 
       if(!t){
-        toast('No se encontró una tarima ocupada en esa ubicación.','er');
+        toast('No se encontró una tarima ocupada con ese LPN.','er');
         return;
       }
 
@@ -2887,6 +2957,7 @@ function aSurtido(){
       render();
     };
   }
+
 
   // ------------------------------------
   // MOSTRAR CAMPO DE CANTIDAD
